@@ -16,6 +16,7 @@ from .notifier import (
     notify_job_start,
     notify_job_done,
 )
+from .usage import get_today_summary
 from .config import config, reload_config, init_config
 
 CST = timezone(timedelta(hours=8))
@@ -47,7 +48,11 @@ def cmd_check(args) -> int:
             for t in result.threads[:5]:
                 icon = "🔓" if t.has_full_access else "🔒"
                 ts = datetime.fromtimestamp(t.updated_at, CST).strftime("%H:%M") if t.updated_at else "?"
-                print(f"  {icon} [{ts}] {t.title[:60]} → {t.tokens:,} tokens")
+                print(f"  {icon} [{ts}] {t.title[:60]} -> {t.tokens:,} tokens")
+
+    # 今日用量
+    from .usage import get_today_summary
+    print(f"\n{get_today_summary()}")
 
     return 0
 
@@ -74,23 +79,25 @@ def cmd_watch(args) -> int:
                 continue
 
             status = check_processes()
+            usage_text = get_today_summary() if status.is_running else None
 
             # --- 进程状态变化检测 ---
             if config.get("alert_on_process_down") and last_process_running is True and not status.is_running:
                 ts = datetime.now(CST).strftime("%H:%M:%S")
                 print(f"[{ts}] 🚨 Codex 进程停止!")
                 details = get_process_details()
-                notify_process_down(details)
+                usage_text = get_today_summary()
+                notify_process_down(details, usage_text)
 
             elif last_process_running is False and status.is_running:
                 ts = datetime.now(CST).strftime("%H:%M:%S")
                 print(f"[{ts}] ✅ Codex 进程恢复")
-                notify_process_startup(status.processes)
+                notify_process_startup(status.processes, usage_text)
 
             elif last_process_running is None and status.is_running:
                 ts = datetime.now(CST).strftime("%H:%M:%S")
                 print(f"[{ts}] ✓ Codex 运行中 ({status.process_count} 进程)")
-                notify_process_startup(status.processes)
+                notify_process_startup(status.processes, usage_text)
 
             last_process_running = status.is_running
 
@@ -108,13 +115,13 @@ def cmd_watch(args) -> int:
                             print(f"    ✅ {c.thread.title}: 阶段完成")
 
                     if _should_notify(result):
-                        notify_thread_change(result.change_summary)
+                        notify_thread_change(result.change_summary, usage_text)
 
                 # --- Agent Jobs 变化 ---
                 if result.active_jobs > last_jobs and config.get("alert_on_job_start"):
-                    notify_job_start(result.active_jobs)
+                    notify_job_start(result.active_jobs, usage_text)
                 elif result.active_jobs == 0 and last_jobs > 0 and config.get("alert_on_job_done"):
-                    notify_job_done()
+                    notify_job_done(usage_text)
                 last_jobs = result.active_jobs
 
             time.sleep(interval)
@@ -166,6 +173,11 @@ def cmd_status(args) -> int:
     summary = get_thread_summary()
     if summary:
         lines.append(summary)
+
+    # 今日用量
+    from .usage import get_today_summary
+    lines.append("")
+    lines.append(get_today_summary())
 
     output = "\n".join(lines)
     if args.send:

@@ -23,6 +23,13 @@ def _now_str() -> str:
     return datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _append_usage(text: str, usage: Optional[str]) -> str:
+    """在通知文本末尾追加用量信息."""
+    if usage:
+        return text + "\n\n" + usage
+    return text
+
+
 def _send_feishu(text: str, title: Optional[str] = None) -> bool:
     """通过飞书 Webhook 发送消息 (NOTIFY_MODE=webhook)."""
     webhook_url = config.get("feishu_webhook_url", "")
@@ -97,7 +104,7 @@ def _send(title: str, text: str, alert_type: str) -> bool:
 # ─── 具体通知函数 ─────────────────────────────────────────
 
 
-def notify_process_down(details: Optional[str] = None) -> bool:
+def notify_process_down(details: Optional[str] = None, usage: Optional[str] = None) -> bool:
     lines = ["🚨 **Codex 进程异常停止**", ""]
     if details:
         lines.append("最后检测到的进程:")
@@ -105,30 +112,30 @@ def notify_process_down(details: Optional[str] = None) -> bool:
         lines.append(details)
         lines.append("```")
     lines.append(f"⏰ 检测时间: {_now_str()}")
-    return _send("🚨 Codex 已停止", "\n".join(lines), "process_down")
+    return _send("🚨 Codex 已停止", _append_usage("\n".join(lines), usage), "process_down")
 
 
-def notify_process_up() -> bool:
+def notify_process_up(usage: Optional[str] = None) -> bool:
     text = f"✅ **Codex 进程已恢复运行**\n\n⏰ 恢复时间: {_now_str()}"
-    return _send("✅ Codex 已恢复", text, "process_up")
+    return _send("✅ Codex 已恢复", _append_usage(text, usage), "process_up")
 
 
-def notify_process_startup(processes: list) -> bool:
+def notify_process_startup(processes: list, usage: Optional[str] = None) -> bool:
     procs_str = "\n".join(f"- {p.name} (PID: {p.pid})" for p in processes[:10])
     text = f"🚀 **Codex 启动检测**\n\n运行进程:\n{procs_str}\n\n⏰ 启动时间: {_now_str()}"
-    return _send("🚀 Codex 已启动", text, "process_startup")
+    return _send("🚀 Codex 已启动", _append_usage(text, usage), "process_startup")
 
 
-def notify_thread_change(change_summary: str) -> bool:
+def notify_thread_change(change_summary: str, usage: Optional[str] = None) -> bool:
     text = f"📊 **线程状态变化**\n\n{change_summary}\n\n⏰ 检测时间: {_now_str()}"
-    return _send("📊 Codex 线程变化", text, "thread_change")
+    return _send("📊 Codex 线程变化", _append_usage(text, usage), "thread_change")
 
 
-def notify_job_start(job_count: int) -> bool:
+def notify_job_start(job_count: int, usage: Optional[str] = None) -> bool:
     text = f"🔧 **Agent Job 启动**\n\n{job_count} 个 agent_job 进入运行状态\n\n⏰ 检测时间: {_now_str()}"
-    return _send("🔧 Codex Job 启动", text, "job_start")
+    return _send("🔧 Codex Job 启动", _append_usage(text, usage), "job_start")
 
 
-def notify_job_done() -> bool:
+def notify_job_done(usage: Optional[str] = None) -> bool:
     text = f"✅ **Agent Job 完成**\n\n所有 agent_job 已结束\n\n⏰ 检测时间: {_now_str()}"
-    return _send("✅ Codex Job 完成", text, "job_done")
+    return _send("✅ Codex Job 完成", _append_usage(text, usage), "job_done")
