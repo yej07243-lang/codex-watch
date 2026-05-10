@@ -1,14 +1,22 @@
-"""通知模块 — 通过飞书 Webhook 发送通知."""
+"""通知模块 — 支持飞书 Webhook 和 Hermes 文件桥接两种模式."""
 
 import json
+import os
 import sys
 import urllib.request
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional
 
 from .config import config
 
 CST = timezone(timedelta(hours=8))
+
+# Hermes 模式告警文件路径
+HERMES_ALERT_FILE = Path("/tmp/codex-watch-alerts.jsonl")
+
+# 通知模式: "webhook" | "hermes" | "none"
+NOTIFY_MODE = os.environ.get("NOTIFY_MODE", config.get("notify_mode", "webhook"))
 
 
 def _now_str() -> str:
@@ -16,10 +24,10 @@ def _now_str() -> str:
 
 
 def _send_feishu(text: str, title: Optional[str] = None) -> bool:
-    """通过飞书 Webhook 发送文本消息."""
+    """通过飞书 Webhook 发送消息 (NOTIFY_MODE=webhook)."""
     webhook_url = config.get("feishu_webhook_url", "")
     if not webhook_url:
-        print(f"⚠ 未配置飞书 Webhook URL，跳过通知", file=sys.stderr)
+        print(f"⚠ 未配置飞书 Webhook URL", file=sys.stderr)
         return False
 
     payload = {
@@ -59,44 +67,68 @@ def _send_feishu(text: str, title: Optional[str] = None) -> bool:
         return False
 
 
+def _write_hermes_alert(alert_type: str, title: str, text: str) -> bool:
+    """写入告警到 JSONL 文件，由 Hermes cron job 消费 (NOTIFY_MODE=hermes)."""
+    try:
+        entry = {
+            "ts": datetime.now(CST).isoformat(),
+            "type": alert_type,
+            "title": title,
+            "text": text,
+        }
+        with open(HERMES_ALERT_FILE, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return True
+    except Exception as e:
+        print(f"⚠ 写入告警文件失败: {e}", file=sys.stderr)
+        return False
+
+
+def _send(title: str, text: str, alert_type: str) -> bool:
+    """根据 NOTIFY_MODE 选择通知方式."""
+    if NOTIFY_MODE == "hermes":
+        return _write_hermes_alert(alert_type, title, text)
+    elif NOTIFY_MODE == "webhook":
+        return _send_feishu(text, title)
+    else:
+        return False
+
+
+# ─── 具体通知函数 ─────────────────────────────────────────
+
+
 def notify_process_down(details: Optional[str] = None) -> bool:
-    """通知 Codex 进程已停止."""
     lines = ["🚨 **Codex 进程异常停止**", ""]
     if details:
-        lines.append(f"最后检测到的进程:")
-        lines.append(f"```")
+        lines.append("最后检测到的进程:")
+        lines.append("```")
         lines.append(details)
-        lines.append(f"```")
+        lines.append("```")
     lines.append(f"⏰ 检测时间: {_now_str()}")
-    return _send_feishu("\n".join(lines), title="🚨 Codex 已停止")
+    return _send("🚨 Codex 已停止", "\n".join(lines), "process_down")
 
 
 def notify_process_up() -> bool:
-    """通知 Codex 进程已恢复."""
     text = f"✅ **Codex 进程已恢复运行**\n\n⏰ 恢复时间: {_now_str()}"
-    return _send_feishu(text, title="✅ Codex 已恢复")
+    return _send("✅ Codex 已恢复", text, "process_up")
 
 
 def notify_process_startup(processes: list) -> bool:
-    """通知 Codex 进程已启动."""
     procs_str = "\n".join(f"- {p.name} (PID: {p.pid})" for p in processes[:10])
     text = f"🚀 **Codex 启动检测**\n\n运行进程:\n{procs_str}\n\n⏰ 启动时间: {_now_str()}"
-    return _send_feishu(text, title="🚀 Codex 已启动")
+    return _send("🚀 Codex 已启动", text, "process_startup")
 
 
 def notify_thread_change(change_summary: str) -> bool:
-    """通知线程状态变化."""
     text = f"📊 **线程状态变化**\n\n{change_summary}\n\n⏰ 检测时间: {_now_str()}"
-    return _send_feishu(text, title="📊 Codex 线程变化")
+    return _send("📊 Codex 线程变化", text, "thread_change")
 
 
 def notify_job_start(job_count: int) -> bool:
-    """通知 agent job 开始."""
     text = f"🔧 **Agent Job 启动**\n\n{job_count} 个 agent_job 进入运行状态\n\n⏰ 检测时间: {_now_str()}"
-    return _send_feishu(text, title="🔧 Codex Job 启动")
+    return _send("🔧 Codex Job 启动", text, "job_start")
 
 
 def notify_job_done() -> bool:
-    """通知 agent job 完成."""
     text = f"✅ **Agent Job 完成**\n\n所有 agent_job 已结束\n\n⏰ 检测时间: {_now_str()}"
-    return _send_feishu(text, title="✅ Codex Job 完成")
+    return _send("✅ Codex Job 完成", text, "job_done")

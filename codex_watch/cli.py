@@ -54,8 +54,13 @@ def cmd_check(args) -> int:
 
 def cmd_watch(args) -> int:
     """守护模式 — 持续监控进程和线程状态."""
+    # 设置通知模式
+    if args.notify:
+        import os
+        os.environ["NOTIFY_MODE"] = args.notify
+
     interval = args.interval or config.get("check_interval", 30)
-    print(f"🔍 Codex Watch 守护模式启动 (间隔 {interval}s)")
+    print(f"🔍 Codex Watch 守护模式启动 (间隔 {interval}s, 通知: {args.notify or 'webhook'})")
     print(f"   按 Ctrl+C 停止\n")
 
     last_process_running: bool | None = None
@@ -189,6 +194,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_watch.add_argument(
         "-i", "--interval", type=int, default=None,
         help=f"轮询间隔秒数 (默认: {config.get('check_interval', 30)})"
+    )
+    p_watch.add_argument(
+        "--notify", choices=["webhook", "hermes", "none"], default=None,
+        help="通知模式: webhook (飞书 Webhook), hermes (写 JSONL 文件由 Hermes 消费), none (不通知)"
     )
     p_watch.set_defaults(func=cmd_watch)
 
