@@ -14,7 +14,7 @@
         <string>codex_watch</string>
         <string>watch</string>
         <string>--interval</string>
-        <string>30</string>
+        <string>15</string>
         <string>--notify</string>
         <string>hermes</string>
     </array>
