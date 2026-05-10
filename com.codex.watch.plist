@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.codex.watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3</string>
+        <string>-m</string>
+        <string>codex_watch</string>
+        <string>watch</string>
+        <string>--interval</string>
+        <string>30</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/a1050/codex-watch</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FEISHU_WEBHOOK_URL</key>
+        <string></string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/codex-watch.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/codex-watch.err</string>
+</dict>
+</plist>
