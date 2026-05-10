@@ -13,11 +13,9 @@ echo ""
 PYTHON=$(which python3 2>/dev/null || echo "/usr/local/bin/python3")
 echo "→ Python: $PYTHON"
 
-# 2. 检查飞书 Webhook
-if [ -z "$FEISHU_WEBHOOK_URL" ]; then
-    echo "⚠ 未设置 FEISHU_WEBHOOK_URL 环境变量"
-    echo "  请在 plist 或环境中设置，否则通知不可用"
-fi
+# 2. 通知模式
+echo "→ 通知模式: hermes (通过 Hermes cron job 中继到飞书)"
+echo "  确保 Hermes cron job 'codex-watch-feishu-relay' 已创建"
 
 # 3. 初始化配置
 echo "→ 初始化配置..."
@@ -29,11 +27,6 @@ echo "→ 生成 launchd plist..."
 mkdir -p "$HOME/Library/LaunchAgents"
 
 sed "s|/usr/local/bin/python3|$PYTHON|g" "$PLIST_FILE" > "$LAUNCHD_PLIST"
-
-# 注入 FEISHU_WEBHOOK_URL
-if [ -n "$FEISHU_WEBHOOK_URL" ]; then
-    /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:FEISHU_WEBHOOK_URL $FEISHU_WEBHOOK_URL" "$LAUNCHD_PLIST" 2>/dev/null || true
-fi
 
 # 5. 加载服务
 echo "→ 加载 launchd 服务..."

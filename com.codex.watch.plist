@@ -9,11 +9,14 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/python3</string>
+        <string>-u</string>
         <string>-m</string>
         <string>codex_watch</string>
         <string>watch</string>
         <string>--interval</string>
         <string>30</string>
+        <string>--notify</string>
+        <string>hermes</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -21,8 +24,10 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <key>FEISHU_WEBHOOK_URL</key>
-        <string></string>
+        <key>NOTIFY_MODE</key>
+        <string>hermes</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
     </dict>
 
     <key>RunAtLoad</key>
