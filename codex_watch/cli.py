@@ -71,6 +71,18 @@ def cmd_watch(args) -> int:
     last_process_running: bool | None = None
     last_jobs: int = 0
 
+    # 进程停止确认机制 — 只有持续停止 N 次才通知
+    down_streak: int = 0
+    down_notified: bool = False
+    down_details: str | None = None
+    confirm_count: int = config.get("process_down_confirm_count", 3)
+
+    # 线程变化去重 — 冷却时间 + token 增量过滤
+    thread_cooldown: int = config.get("thread_change_cooldown", 300)
+    thread_min_delta: int = config.get("thread_change_min_token_delta", 50)
+    last_thread_notify: float = 0
+    last_thread_tokens: dict[str, int] = {}  # thread_id -> 上次通知时的 tokens
+
     try:
         while True:
             # 静默时段跳过
@@ -81,30 +93,60 @@ def cmd_watch(args) -> int:
             status = check_processes()
             usage_text = get_today_summary() if status.is_running else None
 
-            # --- 进程状态变化检测 ---
-            if config.get("alert_on_process_down") and last_process_running is True and not status.is_running:
-                ts = datetime.now(CST).strftime("%H:%M:%S")
-                print(f"[{ts}] 🚨 Codex 进程停止!")
-                details = get_process_details()
-                usage_text = get_today_summary()
-                notify_process_down(details, usage_text)
+            # --- 进程状态变化检测（带确认窗口） ---
+            if status.is_running:
+                # 进程在运行
+                if last_process_running is False:
+                    if down_notified:
+                        # 之前通知过彻底停止，现在是真正的恢复
+                        ts = datetime.now(CST).strftime("%H:%M:%S")
+                        print(f"[{ts}] ✅ Codex 进程恢复")
+                        notify_process_startup(status.processes, usage_text)
+                    else:
+                        # 在确认窗口内恢复（临时停止），不通知飞书
+                        ts = datetime.now(CST).strftime("%H:%M:%S")
+                        print(f"[{ts}] ✓ Codex 进程恢复（临时停止，未通知）")
+                elif last_process_running is None:
+                    ts = datetime.now(CST).strftime("%H:%M:%S")
+                    print(f"[{ts}] ✓ Codex 运行中 ({status.process_count} 进程)")
+                    notify_process_startup(status.processes, usage_text)
 
-            elif last_process_running is False and status.is_running:
-                ts = datetime.now(CST).strftime("%H:%M:%S")
-                print(f"[{ts}] ✅ Codex 进程恢复")
-                notify_process_startup(status.processes, usage_text)
+                # 重置停止状态
+                down_streak = 0
+                down_notified = False
+                down_details = None
+                last_process_running = True
 
-            elif last_process_running is None and status.is_running:
-                ts = datetime.now(CST).strftime("%H:%M:%S")
-                print(f"[{ts}] ✓ Codex 运行中 ({status.process_count} 进程)")
-                notify_process_startup(status.processes, usage_text)
+            else:
+                # 进程停止 — 开始/继续确认计数
+                if config.get("alert_on_process_down"):
+                    if last_process_running is True:
+                        # 刚停止，捕获详情
+                        down_streak = 1
+                        down_details = get_process_details()
+                        ts = datetime.now(CST).strftime("%H:%M:%S")
+                        print(f"[{ts}] ⚠ Codex 进程消失 (确认 {down_streak}/{confirm_count})")
+                    elif last_process_running is False:
+                        down_streak += 1
+                        if not down_notified:
+                            ts = datetime.now(CST).strftime("%H:%M:%S")
+                            print(f"[{ts}] ⚠ 仍无进程 (确认 {down_streak}/{confirm_count})")
 
-            last_process_running = status.is_running
+                    # 达到确认阈值 → 通知
+                    if down_streak >= confirm_count and not down_notified:
+                        ts = datetime.now(CST).strftime("%H:%M:%S")
+                        print(f"[{ts}] 🚨 Codex 彻底停止（已确认 {confirm_count} 次）!")
+                        _usage = get_today_summary()
+                        notify_process_down(down_details, _usage)
+                        down_notified = True
 
-            # --- 线程状态变化检测 ---
+                last_process_running = False
+
+            # --- 线程状态变化检测（带冷却和 token 过滤） ---
             if status.is_running and config.get("alert_on_thread_change", True):
                 result = check_state()
                 if result.success and result.has_changes:
+                    # 打印终端日志（始终输出）
                     print(f"  📊 检测到变化:")
                     for c in result.changes:
                         if c.change_type == ThreadChange.CHANGE_NEW and config.get("alert_on_new_thread"):
@@ -114,7 +156,14 @@ def cmd_watch(args) -> int:
                         elif c.change_type == ThreadChange.CHANGE_STAGE1:
                             print(f"    ✅ {c.thread.title}: 阶段完成")
 
-                    if _should_notify(result):
+                    # 通知去重：冷却时间 + token 增量过滤
+                    now = time.time()
+                    should_notify = _should_notify_thread_changes(
+                        result, last_thread_notify, thread_cooldown,
+                        last_thread_tokens, thread_min_delta
+                    )
+                    if should_notify:
+                        last_thread_notify = now
                         notify_thread_change(result.change_summary, usage_text)
 
                 # --- Agent Jobs 变化 ---
@@ -131,16 +180,45 @@ def cmd_watch(args) -> int:
         return 0
 
 
-def _should_notify(result: MonitorResult) -> bool:
-    """判断是否应该发送通知.
+def _should_notify_thread_changes(
+    result: MonitorResult,
+    last_notify: float,
+    cooldown: int,
+    last_tokens: dict[str, int],
+    min_token_delta: int,
+) -> bool:
+    """判断是否应该发送线程变化通知，带冷却和 token 增量过滤.
 
-    规则: 有新线程或阶段完成时总是通知，纯更新时去重（必须同时有 token 增长）。
+    规则:
+    1. 新线程 / 阶段完成 → 总是通知（不受冷却限制，但受冷却去重）
+    2. 纯更新 → 必须过冷却时间 + token 增长 ≥ min_token_delta
+    3. 冷却时间内的任何变化都抑制
     """
+    now = time.time()
+    if now - last_notify < cooldown:
+        return False
+
+    has_important = False
+    has_update = False
+
     for c in result.changes:
         if c.change_type in (ThreadChange.CHANGE_NEW, ThreadChange.CHANGE_STAGE1):
-            return True
-        if c.change_type == ThreadChange.CHANGE_UPDATE:
-            return True
+            has_important = True
+        elif c.change_type == ThreadChange.CHANGE_UPDATE:
+            has_update = True
+            # 检查 token 增量
+            tid = c.thread.id
+            prev_tokens = last_tokens.get(tid, 0)
+            token_delta = c.thread.tokens - prev_tokens
+            if token_delta >= min_token_delta:
+                has_important = True
+
+    if has_important:
+        # 更新 token 记录
+        for c in result.changes:
+            last_tokens[c.thread.id] = c.thread.tokens
+        return True
+
     return False
 
 

@@ -58,7 +58,11 @@ def check_processes() -> CodexProcessStatus:
         for line in lines:
             parts = line.strip().split(" ", 1)
             if len(parts) >= 2:
-                pid = int(parts[0])
+                try:
+                    pid = int(parts[0])
+                except (ValueError, TypeError):
+                    # pgrep 偶尔输出非 PID 的首字段（如 "builtin"），跳过
+                    continue
                 name = parts[1]
                 proc = ProcessInfo(pid=pid, name=name)
 

@@ -18,6 +18,9 @@ def _default_config() -> dict:
         "alert_on_new_thread": True,
         "alert_on_job_start": True,
         "alert_on_job_done": True,
+        "process_down_confirm_count": 3,  # 进程停止确认次数（连续 N 次检测无进程才通知）
+        "thread_change_cooldown": 300,  # 线程变化通知最小间隔（秒），防止刷屏
+        "thread_change_min_token_delta": 50,  # 最少 token 增量才通知更新（0=关闭过滤）
         "quiet_hours": None,  # {"start": "23:00", "end": "07:00"}
         "log_level": "INFO",
     }
@@ -41,6 +44,7 @@ def _load_config() -> dict:
         "CHECK_INTERVAL": ("check_interval", int),
         "ALERT_PROCESS_DOWN": ("alert_on_process_down", lambda v: v.lower() in ("1", "true", "yes")),
         "ALERT_THREAD_CHANGE": ("alert_on_thread_change", lambda v: v.lower() in ("1", "true", "yes")),
+        "PROCESS_DOWN_CONFIRM": ("process_down_confirm_count", int),
         "QUIET_HOURS_START": None,  # handled below
         "QUIET_HOURS_END": None,
     }

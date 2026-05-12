@@ -105,14 +105,16 @@ def _send(title: str, text: str, alert_type: str) -> bool:
 
 
 def notify_process_down(details: Optional[str] = None, usage: Optional[str] = None) -> bool:
-    lines = ["🚨 **Codex 进程异常停止**", ""]
+    lines = ["🚨 **Codex 进程已彻底停止**", ""]
+    lines.append(f"已连续确认 {config.get('process_down_confirm_count', 3)} 次无进程")
     if details:
-        lines.append("最后检测到的进程:")
+        lines.append("")
+        lines.append("停止前最后检测到的进程:")
         lines.append("```")
         lines.append(details)
         lines.append("```")
     lines.append(f"⏰ 检测时间: {_now_str()}")
-    return _send("🚨 Codex 已停止", _append_usage("\n".join(lines), usage), "process_down")
+    return _send("🚨 Codex 已彻底停止", _append_usage("\n".join(lines), usage), "process_down")
 
 
 def notify_process_up(usage: Optional[str] = None) -> bool:
